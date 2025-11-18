@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    // Opcional: Jenkins revisa el repo cada ~2 minutos.
+    // Podés sacar este bloque si preferís correr demo3 a mano.
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
+    environment {
+        DEPLOY_DIR = "/var/www/html/demo3"
+        S3_BUCKET  = "mi-bucket-demo-jenkins"
+        S3_PREFIX  = "demo3"
+    }
+
+    stages {
+        stage('Build / Versión') {
+            steps {
+                sh '''
+                  if [ ! -f "index.html" ]; then
+                    echo "ERROR: no existe index.html en el workspace"
+                    exit 1
+                  fi
+
+                  # Reemplaza @@VERSION@@ por el número de build de Jenkins
+                  sed -i "s/@@VERSION@@/$BUILD_NUMBER/g" index.html
+
+                  echo "Versión aplicada en index.html (build #$BUILD_NUMBER):"
+                  grep -i "Versión" index.html || true
+                '''
+            }
+        }
+
+        stage('Deploy local (Apache)') {
+            steps {
+                sh """
+                  mkdir -p "${DEPLOY_DIR}"
+                  cp -v index.html "${DEPLOY_DIR}/index.html"
+                """
+                echo "Deploy local OK: http://localhost/demo3"
+            }
+        }
+
+        stage('Upload a S3') {
+            steps {
+                sh """
+                  aws s3 cp index.html s3://${S3_BUCKET}/${S3_PREFIX}/index.html \
+                    --content-type text/html
+                """
+                echo "Subido a S3: s3://${S3_BUCKET}/${S3_PREFIX}/index.html"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline demo3 completado OK (Apache + S3)."
+        }
+        failure {
+            echo "Falló el pipeline demo3. Revisá la consola del job."
+        }
+    }
+}
